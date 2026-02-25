@@ -3,152 +3,152 @@ description:
 alwaysApply: true
 ---
 
-# Claude Unity 6.3 URP Cross-Platform Game Development Guidelines
+# Claude Unity 6.3 URP 跨平台遊戲開發規範
 
-## Project Core Context
-- **Engine Version**: Unity 6.3 (6000.3.x+)
-- **Render Pipeline**: Universal Render Pipeline (URP)
-- **Rendering Technology**: **Render Graph** and **GPU Resident Drawer** enabled by default
-- **Scripting Language**: C# 12 / .NET 8, using Unity 6.3+ exclusive APIs
-- **Target Platforms**: PC (Windows/Mac/Linux), Mobile (Android/iOS), Console (optional)
-- **Key Paths**:
-    - Scripts: `Assets/Scripts/`
-    - Shaders: `Assets/Shaders/`
-    - Render Settings: `Assets/Settings/`
-    - Prefabs: `Assets/Prefabs/`
-    - Art Assets: `Assets/Art/`
+## 專案核心上下文
+- **引擎版本**: Unity 6.3 (6000.3.x+)
+- **渲染管線**: Universal Render Pipeline (URP)
+- **渲染技術**: 預設啟用 **Render Graph** 與 **GPU Resident Drawer**
+- **腳本語言**: C# 12 / .NET 8，使用 Unity 6.3+ 專屬 API
+- **目標平台**: PC (Windows/Mac/Linux)、Mobile (Android/iOS)、Console (可選)
+- **關鍵路徑**:
+    - 腳本: `Assets/Scripts/`
+    - 著色器: `Assets/Shaders/`
+    - 渲染設置: `Assets/Settings/`
+    - 預製件: `Assets/Prefabs/`
+    - 資源: `Assets/Art/`
 
 ---
 
-## Technical Specifications (Unity 6 Specific)
+## 技術規範 (Unity 6 特化)
 
 ### Render Graph
-- Custom passes must implement the `IRenderGraphRecorder` interface (`RecordRenderGraph` method). Using the legacy `ScriptableRenderPass.Execute` is **prohibited**.
-- Pass-to-pass resource transfer uses `TextureHandle`. Persistent RTs (e.g., temporal history) are managed by `ScriptableRendererFeature` directly, not allocated through Render Graph.
-- When a Render Graph-allocated `TextureHandle` needs to be passed to a Shader as a global texture, call `builder.SetGlobalTextureAfterPass(handle, id)` within the pass's `using` block. **Do not** use `Shader.SetGlobalTexture(id, textureHandle)` (fails silently).
-- Use `builder.UseTexture()` / `builder.UseTextureFragment()` to declare read/write dependencies, letting Render Graph handle resource barriers automatically.
+- 自定義 Pass 必須實作 `IRenderGraphRecorder` 介面（`RecordRenderGraph` 方法），**禁止**使用舊版 `ScriptableRenderPass.Execute`。
+- Pass 間資源傳遞使用 `TextureHandle`；持久化 RT（如 temporal history）由 `ScriptableRendererFeature` 自行管理，不透過 RG 分配。
+- RG 分配的 `TextureHandle` 若需作為 global texture 傳給 Shader，必須在 pass 的 `using` 區塊內呼叫 `builder.SetGlobalTextureAfterPass(handle, id)`，**不可**用 `Shader.SetGlobalTexture(id, textureHandle)`（會靜默失敗）。
+- 使用 `builder.UseTexture()` / `builder.UseTextureFragment()` 宣告讀寫依賴，讓 RG 自動處理資源屏障。
 
-### Shader Authoring
-- Use HLSL only. Must `#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"`.
-- All material properties must be wrapped in `CBUFFER_START(UnityPerMaterial) ... CBUFFER_END` to support SRP Batcher.
-- Use `TEXTURE2D` / `SAMPLER` macros. Do not use `sampler2D`.
-- Post-processing blit must use `Blitter.BlitCameraTexture()` API. Do not use `Graphics.Blit()`.
-- Avoid early `return` in HLSL (FXC may report "potentially uninitialized variable"). Use mask multiplication to control output instead.
+### Shader 撰寫
+- 僅使用 HLSL。必須 `#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"`。
+- 所有 Material 屬性必須包裹在 `CBUFFER_START(UnityPerMaterial) ... CBUFFER_END` 中以支援 SRP Batcher。
+- 使用 `TEXTURE2D` / `SAMPLER` 巨集，不使用 `sampler2D`。
+- 後製 Blit 使用 `Blitter.BlitCameraTexture()` API，不使用 `Graphics.Blit()`。
+- HLSL 中避免提前 `return`（FXC 可能報「potentially uninitialized variable」），改用乘以遮罩的方式控制輸出。
 
-### Cross-Platform Shader Compatibility
-- Use `#pragma multi_compile` to define platform branches, and strip unnecessary variants via Shader Stripping in the URP Asset.
-- Avoid more than 4 dynamic branches. Prefer `static const` lookup tables or per-quality macro expansion for complex logic.
-- Texture sample count: Mobile ≤ 4 per pass, PC ≤ 8 per pass.
-- Do not use `discard` / `clip()` on opaque objects for Mobile (causes performance degradation on tile-based GPUs).
+### 跨平台 Shader 相容性
+- 使用 `#pragma multi_compile` 定義平台分支，並在 URP Asset 的 Shader Stripping 中剔除不需要的變體。
+- 避免超過 4 個 dynamic branch；複雜邏輯優先用 `static const` 查表或 per-quality macro 展開。
+- 貼圖取樣數量：Mobile ≤ 4 張/Pass，PC ≤ 8 張/Pass。
+- 不使用 `discard` / `clip()` 於 Mobile 的不透明物件（tile-based GPU 性能劣化）。
 
-### Input System
-- Use **Input System Package (New)** and define `InputActionAsset`. Using the legacy `Input.GetKeyDown` is **prohibited**.
-- Cross-platform input mapping: PC uses keyboard/mouse/gamepad, Mobile uses `Touchscreen`, switching via Action Maps. Do not write `#if UNITY_ANDROID` branches.
-
----
-
-## Cross-Platform Performance Specifications
-
-### Target Performance Budget
-
-| Platform  | Target FPS | Draw Calls | Tri/Frame | Verts/Object |
-|-----------|-----------|-----------|-----------|------------|
-| PC High   | 60 fps    | ≤ 500     | ≤ 2M      | Unlimited  |
-| PC Low    | 60 fps    | ≤ 200     | ≤ 500K    | ≤ 50K     |
-| Android   | 30 fps    | ≤ 100     | ≤ 200K    | ≤ 10K     |
-| iOS       | 60 fps    | ≤ 150     | ≤ 300K    | ≤ 15K     |
-
-### Rendering Optimization Principles
-- **GPU Resident Drawer**: Must be enabled for static objects (scene geometry, buildings). Enable for dynamic objects as needed.
-- **LOD**: All objects exceeding 500 tris must have a `LODGroup` with at least 3 LOD levels (100%/30%/10%).
-- **Occlusion Culling**: Scenes must have baked Occlusion Data. Mark large opaque objects with `Occluder Static`.
-- **Batching**: Use `Static Batching` for static objects. Use `GPU Instancing` for small dynamic objects (add `#pragma instancing_options` to Shader).
-- **Shadow**: Shadow Distance is configured per platform in tiered URP Assets. Mobile must not use more than 1 real-time shadow light.
-
-### Memory and GC Management
-- Per-frame `new` allocations are prohibited (List, array, string concat). Use `ObjectPool<T>` or pre-allocate.
-- Use `StringBuilder` or string interpolation for string formatting. Avoid `string.Format` in Update.
-- Use `NativeArray<T>` / `NativeList<T>` for large data structures (Burst-compatible). Must call `Dispose()` properly.
-- `UnityEngine.Object` null comparisons are expensive. After caching, use C# `is null`. Only use `== null` when Unity lifecycle checks are needed.
+### 輸入系統
+- 使用 **Input System Package (New)**，定義 `InputActionAsset`，**禁止**使用舊版 `Input.GetKeyDown`。
+- 跨平台輸入映射：PC 用鍵鼠/Gamepad，Mobile 用 `Touchscreen`，透過 Action Map 切換，不寫 `#if UNITY_ANDROID` 分支。
 
 ---
 
-## Code Style Guidelines
+## 跨平台性能規範
 
-### Naming Conventions
-| Type                          | Convention        | Example                  |
-|-------------------------------|------------------|--------------------------|
-| Classes, Methods, Properties  | `PascalCase`     | `TowerController`        |
-| Private Fields                | `m_camelCase`    | `m_currentHealth`        |
-| Serialized Fields             | `[SerializeField] private` + `m_camelCase` | `m_moveSpeed` |
-| Constants                     | `k_PascalCase`   | `k_MaxTowerCount`        |
-| Interfaces                    | `I` prefix       | `IDamageable`            |
-| Shader Properties             | `_PascalCase`    | `_BaseColor`             |
+### 目標性能預算
 
-### Structural Guidelines
-- Prefer `async/await` (`UniTask` or `.NET Task`). Avoid `Coroutine` (GC overhead, difficult to debug).
-- Manager classes use the singleton pattern via `[RuntimeInitializeOnLoadMethod]` or Scene injection. **Do not use** `DontDestroyOnLoad` Prefab Singleton (difficult to test).
-- Separate data from logic: use `[Serializable] struct` or `ScriptableObject` for pure data; behavior logic belongs in MonoBehaviour/System.
-- Mark classes not intended for inheritance with `sealed` to enable JIT devirtualization.
+| 平台        | 目標幀率 | Draw Call | Tri/Frame  | 頂點/物件  |
+|-----------|---------|-----------|------------|----------|
+| PC High   | 60 fps  | ≤ 500     | ≤ 2M       | 不限      |
+| PC Low    | 60 fps  | ≤ 200     | ≤ 500K     | ≤ 50K    |
+| Android   | 30 fps  | ≤ 100     | ≤ 200K     | ≤ 10K    |
+| iOS       | 60 fps  | ≤ 150     | ≤ 300K     | ≤ 15K    |
 
-### Prohibited Patterns
-- Do not call `GetComponent<T>()`, `FindObjectOfType<T>()`, or `GameObject.Find()` in `Update()` / `FixedUpdate()`.
-- Do not declare material properties outside the Shader's `CBUFFER`.
-- Do not use `Resources.Load()` (use Addressables instead).
-- Do not use `Camera.main` (calls `FindObjectOfType` internally; cache the reference or use a `[CameraTag]` approach).
+### 渲染優化原則
+- **GPU Resident Drawer**: 靜態物件（場景幾何、建築）必須啟用，動態物件視情況開啟。
+- **LOD**: 所有超過 500 tri 的物件必須設定 `LODGroup`，至少 3 個 LOD 級別（100%/30%/10%）。
+- **Occlusion Culling**: 場景必須烘焙 Occlusion Data，使用 `Occluder Static` 標記大型不透明物件。
+- **Batching**: 靜態物件用 `Static Batching`；動態小物件用 `GPU Instancing`（Shader 加 `#pragma instancing_options`）。
+- **Shadow**: 陰影 Distance 依平台在 URP Asset 分層設定；Mobile 不使用超過 1 個即時陰影燈光。
+
+### 記憶體與 GC 管理
+- 每幀禁止 `new` 配置（List、array、string concat）；使用 `ObjectPool<T>` 或預先分配。
+- 字串格式化使用 `StringBuilder` 或插值字串，避免 `string.Format` 於 Update 中。
+- 大型資料結構使用 `NativeArray<T>` / `NativeList<T>`（Burst 相容），需正確 `Dispose()`。
+- `UnityEngine.Object` 的 Null 比較很耗效能，快取後用 C# `is null` 判斷；只在需要 Unity 生命週期時用 `== null`。
 
 ---
 
-## Asset Pipeline Guidelines
+## 代碼風格規範
 
-### Asset Loading
-- Use the **Addressable Asset System** for all runtime asset loading. Do not use `Resources/`.
-- Async loading: `Addressables.LoadAssetAsync<T>()`, used with `await`.
-- Asset release: explicitly call `Addressables.Release()` to avoid memory leaks.
+### 命名規範
+| 類型               | 規範             | 範例                       |
+|------------------|-----------------|--------------------------|
+| 類別、方法、屬性       | `PascalCase`    | `TowerController`        |
+| 私有欄位             | `_camelCase`    | `_currentHealth`         |
+| 序列化欄位            | `[SerializeField] private` + `_camelCase` | `_moveSpeed` |
+| 常數               | `UPPER_SNAKE`   | `MAX_TOWER_COUNT`        |
+| 介面               | `I` 前綴         | `IDamageable`            |
+| Shader property  | `_PascalCase`   | `_BaseColor`             |
 
-### Texture Specifications
+### 結構規範
+- 優先使用 `async/await` (`UniTask` 或 `.NET Task`)，避免 `Coroutine`（GC、Debug 困難）。
+- Manager 類別使用單例模式，以 `[RuntimeInitializeOnLoadMethod]` 或 Scene 注入，**不使用** `DontDestroyOnLoad` 的 Prefab Singleton（難以測試）。
+- 資料與邏輯分離：純資料用 `[Serializable] struct` 或 `ScriptableObject`；行為邏輯在 MonoBehaviour/System 中。
+- 使用 `sealed` 修飾不打算繼承的類別，利於 JIT 去虛化。
 
-| Usage     | Format (Android) | Format (iOS) | Format (PC) | Max Size  |
+### 禁止模式
+- 禁止在 `Update()`/`FixedUpdate()` 中呼叫 `GetComponent<T>()`、`FindObjectOfType<T>()`、`GameObject.Find()`。
+- 禁止在 Shader 的 `CBUFFER` 外宣告 Material 屬性。
+- 禁止使用 `Resources.Load()`（改用 Addressables）。
+- 禁止使用 `Camera.main`（每次呼叫會 `FindObjectOfType`；快取引用或用 `[CameraTag]` 方式）。
+
+---
+
+## 資源管線規範
+
+### 資源載入
+- 使用 **Addressable Asset System** 進行所有執行時資源載入，不使用 `Resources/`。
+- 非同步載入：`Addressables.LoadAssetAsync<T>()`，配合 `await` 使用。
+- 資源釋放：明確呼叫 `Addressables.Release()`，避免記憶體洩漏。
+
+### 貼圖規範
+
+| 用途        | Format (Android) | Format (iOS) | Format (PC) | Max Size   |
 |-----------|-----------------|-------------|------------|-----------|
 | Albedo    | ASTC 6x6        | ASTC 6x6    | DXT5       | 2048      |
 | Normal    | ASTC 6x6        | ASTC 6x6    | BC5        | 2048      |
 | UI Atlas  | ASTC 4x4        | ASTC 4x4    | DXT5       | 4096      |
-| HDR / RT  | RGBAHalf        | RGBAHalf    | RGBAHalf   | As needed |
+| HDR / RT  | RGBAHalf        | RGBAHalf    | RGBAHalf   | 依需求     |
 
-- Enable Mipmaps (except for UI textures).
-- Use **Texture Streaming** (`streamingMipmaps = true`) for large scene textures.
+- 啟用 Mipmap（UI 貼圖除外）。
+- 大型場景貼圖使用 **Texture Streaming**（`streamingMipmaps = true`）。
 
 ### Audio
-- Background music: `Streaming`, `Vorbis`, Mono.
-- Sound effects: `Decompress on Load` (short clips) / `Compressed in Memory` (long clips), `ADPCM`.
+- 背景音樂：`Streaming`，`Vorbis`，Mono。
+- 音效：`Decompress on Load`（短音效） / `Compressed in Memory`（長音效），`ADPCM`。
 
 ---
 
-## URP Asset Tiered Configuration
+## URP Asset 分層設定
 
-The project must maintain three URP Assets (located in `Assets/Settings/`):
+專案必須維護三份 URP Asset（放於 `Assets/Settings/`）：
 
-| Asset Name               | Purpose                     | Key Settings                                     |
-|--------------------------|-----------------------------|--------------------------------------------------|
-| `URP_PC_High.asset`     | PC High Quality             | Forward+, SSAO, Shadows 150m, 4 shadow cascades |
-| `URP_PC_Low.asset`      | PC Low-end / Integrated GPU | Forward, No SSAO, Shadows 50m, 2 cascades       |
-| `URP_Mobile.asset`      | Android / iOS               | Forward, No SSAO, Shadows 30m, 1 cascade, HDR off |
+| Asset 名稱               | 用途               | 關鍵設定                              |
+|-------------------------|------------------|-------------------------------------|
+| `URP_PC_High.asset`     | PC 高品質           | Forward+、SSAO、Shadows 150m、4 shadow cascades |
+| `URP_PC_Low.asset`      | PC 低配/整合顯卡      | Forward、無 SSAO、Shadows 50m、2 cascades |
+| `URP_Mobile.asset`      | Android / iOS     | Forward、無 SSAO、Shadows 30m、1 cascade、HDR off |
 
-Switch the corresponding URP Asset via the `QualitySettings` API or Quality Levels.
-
----
-
-## Response Principles
-1. **Reject Deprecated Syntax**: Never provide `ScriptableRenderPass.Execute`, `Camera.main` global lookup, `Resources.Load`, or `Coroutine` as primary solutions in new code.
-2. **Terminology Consistency**: Maintain English technical terms (Render Graph, TextureHandle, URP Asset, etc.) and use English for all explanations.
-3. **Platform Awareness**: When providing code, if behavior differs across platforms, always note platform-specific differences and recommended settings.
-4. **Performance First**: All recommendations must consider Mobile performance baseline first, then scale up to PC/Console.
-5. **No API Guessing**: If unsure whether a specific Unity 6.3 API exists, explicitly state that official documentation should be consulted. Do not fabricate method signatures.
+透過 `QualitySettings` API 或 Quality Level 切換對應 URP Asset。
 
 ---
 
-## Common Commands
-- **Build**: Triggered via `UnityEditor.BuildPlayerWindow`, or via CLI `Unity.exe -batchmode -buildTarget <platform>`.
-- **Test**: `Unity Test Framework`. `EditMode` tests for pure logic, `PlayMode` tests for scene interactions.
-- **Profiling**: Use **Unity Profiler** + **Frame Debugger** + **RenderDoc** (PC) / **Xcode Instruments** (iOS) / **Android GPU Inspector** (Android).
-- **Addressables Build**: `AddressableAssetSettings.BuildPlayerContent()` must be executed before the Player Build.
+## 回答原則
+1. **拒絕過時語法**: 嚴禁提供 `ScriptableRenderPass.Execute`、`Camera.main` 全域查找、`Resources.Load`、`Coroutine` 作為新程式碼的主要方案。
+2. **術語一致性**: 保持英文技術名詞（Render Graph、TextureHandle、URP Asset…），但使用繁體中文解釋邏輯。
+3. **平台意識**: 提供程式碼時，若行為因平台而異，必須說明各平台的差異與建議設定。
+4. **性能優先**: 所有建議預設考量 Mobile 效能底線，再向上擴充至 PC/Console。
+5. **不猜測 API**: 若不確定特定 Unity 6.3 API 是否存在，明確說明需查閱官方文檔，不捏造方法簽名。
+
+---
+
+## 常規指令
+- **Build**: `UnityEditor.BuildPlayerWindow` 觸發，或透過 CLI `Unity.exe -batchmode -buildTarget <platform>`。
+- **Test**: `Unity Test Framework`，`EditMode` 測試純邏輯，`PlayMode` 測試場景互動。
+- **Profiling**: 使用 **Unity Profiler** + **Frame Debugger** + **RenderDoc**（PC）/ **Xcode Instruments**（iOS）/ **Android GPU Inspector**（Android）。
+- **Addressables Build**: `AddressableAssetSettings.BuildPlayerContent()` 需在 Player Build 前執行。
