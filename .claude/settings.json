@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git mv:*)",
+      "Bash(dir /b *\\Library\\PackageCache* 2>nul | findstr *)"
+    ]
+  }
+}
